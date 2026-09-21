@@ -11,8 +11,9 @@ from datetime import date, datetime, timezone
 from pathlib import Path
 from typing import Literal
 from uuid import uuid4
+from zipfile import BadZipFile
 
-from fastapi import FastAPI, File, Form, HTTPException, Query as ApiQuery, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, Query as ApiQuery, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from loguru import logger
@@ -48,7 +49,9 @@ from config import (
 )
 
 logger.remove()
-logger.add(sys.stderr, level=LOG_LEVEL.upper())
+from api.services.aws.settings import enabled as aws_enabled
+logger.add(sys.stderr, level=LOG_LEVEL.upper(), serialize=aws_enabled(),
+           diagnose=False, backtrace=False)
 
 
 @asynccontextmanager
@@ -108,20 +111,49 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+if aws_enabled():
+    from api.services.aws.errors import install_exception_handlers
+    install_exception_handlers(app)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["X-Request-ID", "Content-Disposition"],
 )
 
 
-def _download(content: bytes, media_type: str, filename: str) -> StreamingResponse:
+@app.middleware("http")
+async def log_request(request: Request, call_next):
+    from time import perf_counter
+    from api.services.aws.logging import event
+    started = perf_counter()
+    request_id = uuid4().hex
+    try:
+        response = await call_next(request)
+        event("api_request", request_id=request_id, method=request.method,
+              status_code=response.status_code,
+              duration_ms=round((perf_counter() - started) * 1000, 2))
+        response.headers["X-Request-ID"] = request_id
+        return response
+    except Exception as exc:
+        event("api_request_failed", request_id=request_id, error_type=type(exc).__name__)
+        raise
+
+
+def _download(content: bytes, media_type: str, filename: str, *, s3_key: str | None = None) -> StreamingResponse:
     safe_name = "".join(
         character for character in filename
         if character.isalnum() or character in {"-", "_", "."}
     )
+    if aws_enabled():
+        from api.services.aws.artifacts import archive_export
+        try:
+            archive_export(content, safe_name, media_type, key=s3_key)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail="Export storage unavailable; retry later") from exc
     return StreamingResponse(
         io.BytesIO(content),
         media_type=media_type,
@@ -228,6 +260,9 @@ async def ingest(force: bool = False) -> dict:
     from tools.data_loader import ingest_csv, ingest_saml_knowledge
 
     try:
+        if aws_enabled():
+            from api.services.aws.bootstrap import ingest_baselines
+            return ingest_baselines(force=force)
         transactions = ingest_csv(force=force)
         saml_knowledge = ingest_saml_knowledge(force=force)
         return {
@@ -362,6 +397,34 @@ def investigation_detail(investigation_id: str) -> InvestigationRecord:
     if record is None:
         raise HTTPException(status_code=404, detail="Investigation not found")
     return record
+
+
+@app.get("/investigations/{investigation_id}/aws-status", tags=["workflow"])
+def investigation_aws_status(investigation_id: str) -> dict:
+    """Expose real publish status and a short-lived private report download."""
+    if not aws_enabled():
+        return {"aws_enabled": False}
+    from api.services.aws.dynamodb_service import InvestigationRepository
+    from api.services.aws.s3_service import S3Service
+    item = InvestigationRepository().get_investigation(investigation_id)
+    if item is None:
+        raise HTTPException(status_code=404, detail="Investigation not found")
+    key = item.get("report_s3_key")
+    return {"aws_enabled": True, "notification_status": item.get("notification_status"),
+            "report_url": S3Service().generate_presigned_url(key) if key else None}
+
+
+@app.post("/investigations/{investigation_id}/retry-aws", tags=["workflow"])
+def retry_investigation_aws(investigation_id: str) -> dict:
+    if not aws_enabled():
+        raise HTTPException(status_code=409, detail="AWS mode is disabled")
+    from api.services.aws.completion import complete
+    record = _load_investigation_or_latest(investigation_id)
+    try:
+        complete(record.response)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Report storage unavailable; retry later") from exc
+    return investigation_aws_status(investigation_id)
 
 
 @app.get("/queue/summary", tags=["workflow"])
@@ -532,8 +595,8 @@ async def inspect_dataset(file: UploadFile = File(...)) -> dict:
             "preview": inspection.preview,
             "warnings": inspection.warnings,
         }
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (ValueError, BadZipFile) as exc:
+        raise HTTPException(status_code=422, detail="Invalid dataset file: " + str(exc)) from exc
     finally:
         path.unlink(missing_ok=True)
 
@@ -557,15 +620,29 @@ async def upload_dataset(
     name = (display_name.strip() or original_name)[:120]
     path, size, fingerprint = await _store_upload(file)
     try:
-        result = register_uploaded_dataset(
-            path=path,
-            display_name=name,
-            dataset_type=dataset_type,
-            md5_fingerprint=fingerprint,
-            file_size_bytes=size,
-            source_file=original_filename,
-            force=force,
-        )
+        from tools.dataset_store import get_dataset
+        existing = get_dataset(f"ds_{fingerprint[:12]}") if aws_enabled() else None
+        # AWS retries may arrive after ingestion committed but the upload failed.
+        if existing and not force:
+            if existing.md5_fingerprint != fingerprint or existing.dataset_type != dataset_type:
+                raise ValueError("Dataset already registered with conflicting metadata")
+            result = DatasetUploadResult(dataset_id=existing.dataset_id,
+                display_name=existing.display_name, row_count=existing.row_count,
+                schema_detected=existing.schema_detected, warnings=["Existing dataset reused"])
+        else:
+            result = register_uploaded_dataset(
+                path=path,
+                display_name=name,
+                dataset_type=dataset_type,
+                md5_fingerprint=fingerprint,
+                file_size_bytes=size,
+                source_file=original_filename,
+                force=force,
+            )
+        from api.services.aws.settings import enabled
+        if enabled():
+            from api.services.aws.datasets import upload_dataset as store_cloud_dataset
+            store_cloud_dataset(path, result.dataset_id, original_filename, dataset_type, fingerprint)
         from tools.workflow_store import record_audit_event
 
         record_audit_event(
@@ -580,9 +657,17 @@ async def upload_dataset(
             },
         )
         return result
-    except ValueError as exc:
+    except (ValueError, BadZipFile) as exc:
         status = 409 if "already registered" in str(exc) else 422
         raise HTTPException(status_code=status, detail=str(exc)) from exc
+    except Exception as exc:
+        if aws_enabled():
+            raise HTTPException(status_code=503, detail="Dataset storage unavailable. Retry this upload.") from exc
+        raise
+    finally:
+        from api.services.aws.settings import enabled
+        if enabled():
+            path.unlink(missing_ok=True)
 
 
 @app.get("/datasets/{dataset_id}", response_model=DatasetInfo, tags=["data"])
@@ -751,6 +836,14 @@ def transactions(
     }
 
 
+@app.get("/exports/investigations/{investigation_id}/entities", tags=["export"])
+def export_investigation_entities(
+    investigation_id: str,
+    format: Literal["csv", "json", "xlsx"] = ApiQuery(default="csv"),
+) -> StreamingResponse:
+    return export_entities(format=format, investigation_id=investigation_id)
+
+
 @app.get("/export/entities", tags=["export"])
 def export_entities(
     format: Literal["csv", "json", "xlsx"] = ApiQuery(default="csv"),
@@ -815,19 +908,26 @@ def export_sar(
     )
     if entity is None:
         raise HTTPException(status_code=404, detail="Flagged entity not found")
+    source_record = next(record for record in records
+                         if any(candidate.entity_id == entity_id for candidate in record.response.top_entities))
+    account_key = hashlib.sha256(entity_id.encode()).hexdigest()[:20]
+    s3_key = f"sar-drafts/{source_record.investigation_id}/{account_key}/sar-draft.{format}"
     if format == "pdf":
         return _download(
             export_sar_pdf(entity),
             "application/pdf",
             f"sar_draft_{entity_id}.pdf",
+            s3_key=s3_key,
         )
     return _download(
         export_sar_txt(entity),
         "text/plain; charset=utf-8",
         f"sar_draft_{entity_id}.txt",
+        s3_key=s3_key,
     )
 
 
+@app.get("/exports/investigations/{investigation_id}", tags=["export"])
 @app.get("/export/investigation/{investigation_id}", tags=["export"])
 def export_investigation(
     investigation_id: str,
@@ -859,6 +959,7 @@ def export_investigation(
     )
 
 
+@app.get("/exports/investigations/{investigation_id}/trace", tags=["export"])
 @app.get("/export/trace/{investigation_id}", tags=["export"])
 def export_trace(
     investigation_id: str,
@@ -976,6 +1077,8 @@ def query(request: QueryRequest) -> AgentResponse:
     """Run intent extraction, planning, and the current tool implementations."""
     runner = getattr(app.state, "agent_runner", None) or AgentRunner()
     try:
+        from api.services.aws.logging import event
+        event("investigation_started", dataset_id=request.dataset_id)
         response = runner.run(request.query, dataset_id=request.dataset_id)
         if getattr(app.state, "workflow_enabled", True):
             from tools.workflow_store import persist_investigation
