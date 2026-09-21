@@ -1,4 +1,4 @@
-# FinCEN Guidance: Smurfing
+# FinCEN Guidance for Smurfing
 
 ## Definition
 Smurfing is a form of structuring that uses a network of individuals ("smurfs") who each make
