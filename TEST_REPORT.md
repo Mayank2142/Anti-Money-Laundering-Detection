@@ -1,15 +1,16 @@
 # AML Agent Test Report
 
-Date: 2026-07-26
+Date: 2026-09-20
 
 ## Result
 
-- Backend: **251 passed, 4 skipped, 1 expected failure**
-- Frontend: **26 passed**
+- Backend: **324 passed, 4 skipped, 1 expected failure**
+- Frontend: **29 passed**
 - Live API demo queries: **4 opt-in cases**
 - Frontend production build: **passed**
 - Frontend lint: **passed**
-- Browser workflow: **passed with no console errors**
+- Deployed AWS browser workflow: **API connected; HI-Small active**
+- AWS SAM template: **valid**
 - SAML-D validation script: **passed**
 
 ## Coverage added
@@ -59,6 +60,9 @@ Date: 2026-07-26
 - Cold-start retries for idempotent reads only
 - Lazy-loaded Cartesian Plotly bundle reduced from 4,655 KB to 1,371 KB
 - Frontend CI, backend unit CI, Render blueprint, and staged Sites release
+- Boto3-backed S3, DynamoDB, and SNS service wrappers with local fallbacks
+- Lambda HTTP/S3 event routing, URL-decoded keys, duplicate-event handling, and structured failures
+- API Gateway CORS, CloudWatch structured logging, IAM-scoped SAM resources, and frontend deployment
 
 ## Performance
 
@@ -117,7 +121,7 @@ Remaining production controls:
 
 1. Demo session authentication is implemented; enterprise IdP integration,
    production RBAC, and maker-checker approval remain deployment controls.
-2. The staged frontend release is intentionally not activated until the
-   production API and private dataset bundle are configured.
+2. The public AWS demonstration uses an S3 website endpoint. A production
+   deployment should add an HTTPS CDN and an enterprise identity provider.
 3. The 1.37 MB Cartesian-only Plotly bundle is isolated behind a lazy boundary;
    broad EDA loads it on demand while normal investigation routes stay lean.
