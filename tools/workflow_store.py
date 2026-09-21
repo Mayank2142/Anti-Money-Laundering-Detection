@@ -207,7 +207,7 @@ def record_audit_event(
             db.close()
 
 
-def persist_investigation(
+def _persist_local_investigation(
     response: AgentResponse,
     actor: str = "sentinel.agent",
     conn: duckdb.DuckDBPyConnection | None = None,
@@ -216,7 +216,8 @@ def persist_investigation(
     own_conn = conn is None
     db = conn or get_db_connection()
     ensure_workflow_schema(db)
-    investigation_id = f"INV-{uuid4().hex[:12].upper()}"
+    from api.services.aws.investigations import event_investigation_id
+    investigation_id = event_investigation_id.get() or f"INV-{uuid4().hex[:12].upper()}"
     created_at = _utc_now()
     persisted = response.model_copy(
         update={"investigation_id": investigation_id}
@@ -342,7 +343,7 @@ def persist_investigation(
             db.close()
 
 
-def list_investigations(
+def _list_local_investigations(
     limit: int = 50,
     dataset_id: str | None = None,
     conn: duckdb.DuckDBPyConnection | None = None,
@@ -395,7 +396,7 @@ def list_investigations(
             db.close()
 
 
-def get_investigation(
+def _get_local_investigation(
     investigation_id: str,
     conn: duckdb.DuckDBPyConnection | None = None,
 ) -> InvestigationRecord | None:
@@ -589,7 +590,7 @@ def _refresh_investigation_status(
     )
 
 
-def assign_alert(
+def _assign_local_alert(
     alert_id: str,
     assigned_to: str,
     actor: str,
@@ -630,7 +631,7 @@ def assign_alert(
             db.close()
 
 
-def disposition_alert(
+def _disposition_local_alert(
     alert_id: str,
     disposition: str,
     actor: str,
@@ -791,3 +792,78 @@ def queue_summary(
     finally:
         if own_conn:
             db.close()
+
+
+def persist_investigation(
+    response: AgentResponse,
+    actor: str = "sentinel.agent",
+    conn: duckdb.DuckDBPyConnection | None = None,
+) -> AgentResponse:
+    """Preserve local workflow; AWS metadata/evidence use durable adapters."""
+    from api.services.aws.settings import enabled
+    from api.services.aws.investigations import event_investigation_id
+    event_id = event_investigation_id.get() if enabled() else None
+    existing = _get_local_investigation(event_id, conn) if event_id else None
+    persisted = existing.response if existing else _persist_local_investigation(response, actor, conn)
+    if enabled():
+        if conn is None:
+            from api.services.aws.runtime import checkpoint
+            # Persist the queue/audit commit before publishing external results.
+            checkpoint()
+        from api.services.aws.investigations import save
+        save(_get_local_investigation(persisted.investigation_id, conn))
+        from api.services.aws.completion import complete
+        from api.services.aws.logging import event
+        try:
+            if not event_id:
+                complete(persisted)
+        except Exception as exc:
+            # Durable response remains available when report generation fails.
+            event("investigation_artifact_failed", investigation_id=persisted.investigation_id,
+                  error_type=type(exc).__name__)
+    return persisted
+
+
+def list_investigations(
+    limit: int = 50,
+    dataset_id: str | None = None,
+    conn: duckdb.DuckDBPyConnection | None = None,
+) -> list[InvestigationSummary]:
+    from api.services.aws.settings import enabled
+    if enabled() and conn is None:
+        from api.services.aws.investigations import list_records
+        return list_records(limit, dataset_id)
+    return _list_local_investigations(limit, dataset_id, conn)
+
+
+def get_investigation(
+    investigation_id: str,
+    conn: duckdb.DuckDBPyConnection | None = None,
+) -> InvestigationRecord | None:
+    from api.services.aws.settings import enabled
+    if enabled() and conn is None:
+        from api.services.aws.investigations import get
+        return get(investigation_id)
+    return _get_local_investigation(investigation_id, conn)
+
+
+def _sync_aws_workflow(item: AlertQueueItem | None, conn=None) -> AlertQueueItem | None:
+    from api.services.aws.settings import enabled
+    if enabled() and item:
+        if conn is None:
+            from api.services.aws.runtime import checkpoint
+            checkpoint()
+        from api.services.aws.investigations import sync_workflow
+        from api.services.aws.dynamodb_service import InvestigationRepository
+        sync_workflow(_get_local_investigation(item.investigation_id, conn))
+        InvestigationRepository().update_investigation(item.investigation_id,
+                                                       {"assigned_to": item.assigned_to})
+    return item
+
+
+def assign_alert(alert_id: str, assigned_to: str, actor: str, conn=None) -> AlertQueueItem | None:
+    return _sync_aws_workflow(_assign_local_alert(alert_id, assigned_to, actor, conn), conn)
+
+
+def disposition_alert(alert_id: str, disposition: str, actor: str, conn=None) -> AlertQueueItem | None:
+    return _sync_aws_workflow(_disposition_local_alert(alert_id, disposition, actor, conn), conn)
