@@ -23,7 +23,7 @@ import type {
   TransactionPage,
 } from './types'
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? '/api'
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? '/api').replace(/\/$/, '')
 
 const RETRYABLE_STATUS = new Set([429, 502, 503, 504])
 const DEFAULT_TIMEOUT_MS = 30_000
