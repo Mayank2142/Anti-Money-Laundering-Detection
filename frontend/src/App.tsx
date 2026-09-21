@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import {
-  BrowserRouter,
+  HashRouter,
   Route,
   Routes,
   useLocation,
@@ -74,31 +74,47 @@ function ApplicationShell() {
     let active = true
 
     async function refreshWorkspaceState() {
-      const [health, datasets, queue] = await Promise.allSettled([
-        checkHealth(),
-        getDatasets(),
-        getQueueSummary(),
-      ])
+      try {
+        await checkHealth()
+        if (active) {
+          setWorkspaceState((current) => ({ ...current, apiStatus: 'online' }))
+        }
+      } catch {
+        if (active) {
+          setWorkspaceState((current) => ({ ...current, apiStatus: 'offline' }))
+        }
+      }
 
-      if (!active) return
+      // Lambda restores and checkpoints one governed DuckDB workspace at a time.
+      // Load these views sequentially so cold-start reads do not contend for it.
+      try {
+        const datasets = await getDatasets()
+        if (active) {
+          const activeDataset = datasets.find(
+            (dataset) => dataset.dataset_type === 'primary' && dataset.is_active,
+          )?.display_name ?? 'No active primary dataset'
+          setWorkspaceState((current) => ({ ...current, activeDataset }))
+        }
+      } catch {
+        if (active) {
+          setWorkspaceState((current) => ({
+            ...current,
+            activeDataset: 'Evidence unavailable',
+          }))
+        }
+      }
 
-      const activeDataset =
-        datasets.status === 'fulfilled'
-          ? datasets.value.find(
-              (dataset) => dataset.dataset_type === 'primary' && dataset.is_active,
-            )?.display_name ?? 'No active primary dataset'
-          : 'Evidence unavailable'
-
-      const openAlerts =
-        queue.status === 'fulfilled'
-          ? queue.value.new + queue.value.in_review + queue.value.escalated
-          : null
-
-      setWorkspaceState({
-        apiStatus: health.status === 'fulfilled' ? 'online' : 'offline',
-        activeDataset,
-        openAlerts,
-      })
+      try {
+        const queue = await getQueueSummary()
+        if (active) {
+          const openAlerts = queue.new + queue.in_review + queue.escalated
+          setWorkspaceState((current) => ({ ...current, openAlerts }))
+        }
+      } catch {
+        if (active) {
+          setWorkspaceState((current) => ({ ...current, openAlerts: null }))
+        }
+      }
     }
 
     void refreshWorkspaceState()
@@ -171,10 +187,10 @@ function ApplicationShell() {
 
 export default function App() {
   return (
-    <BrowserRouter>
+    <HashRouter>
       <Routes>
         <Route path="/*" element={<ApplicationShell />} />
       </Routes>
-    </BrowserRouter>
+    </HashRouter>
   )
 }
