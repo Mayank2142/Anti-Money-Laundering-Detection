@@ -1,24 +1,19 @@
 # Contributors
 
-## Repository owner
+## Team
 
-- Mayank Gupta (`Mayank2142`)
-  - Branch: `mayank`
-  - Owns frontend, UI/UX, presentation agents, presentation APIs, and
-    unassigned non-backend work.
-
-## Contributor
-
-- Devesh Raj `<deveshraj003@gmail.com>`
-  - Branch: `devesh`
-  - Owns backend services, databases, core APIs, authentication backend,
-    orchestration, AML detection, model integration, and LLM/RAG services.
+- **Mayank Gupta** — React/TypeScript dashboard, transaction pages, risk
+  charts, investigation screens, frontend/backend integration, and UI/UX.
+- **Devesh Singhal** — AWS integration and deployment using S3, DynamoDB,
+  Lambda, API Gateway, CloudWatch, SNS, IAM, SAM, and CloudFormation.
+- **Devesh Raj** — FastAPI backend, transaction analysis, AML rules,
+  statistical detection, Isolation Forest, NetworkX graph analysis, risk
+  scoring, and evidence-based explanations.
 
 ## Production ownership
 
-The `main` branch is the protected production branch. Development is not
-performed directly on `main`, and changes reach it only after explicit
-approval from the repository owner.
+The `main` branch represents the deployable project state. Changes should be
+reviewed and tested before they are merged or deployed.
 
 Commit authorship must reflect the person who performed the work. When both
 contributors participate in the same change, use an accurate

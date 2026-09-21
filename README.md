@@ -1,15 +1,16 @@
 <div align="center">
 
-# Sentinel AML
+# Anti-Money-Laundering-Detection
 
-### Ask the data. Trace every decision.
+### Sentinel AML — Ask the data. Trace every decision.
 
 An agentic AML investigation workspace that converts a natural-language question into a query-specific analytical plan, invokes only the tools that are needed, and returns explainable risk with an auditable human-review workflow.
 
 [![React](https://img.shields.io/badge/React-19-20232A?logo=react&logoColor=61DAFB)](frontend/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-6-3178C6?logo=typescript&logoColor=white)](frontend/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.111-009688?logo=fastapi&logoColor=white)](api/)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://github.com/Mayank2142/AI-Powered-Suspicious-Activity-Detection/blob/main/requirements.txt)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://github.com/Mayank2142/Anti-Money-Laundering-Detection/blob/main/requirements.txt)
+[![AWS](https://img.shields.io/badge/AWS-Serverless-FF9900?logo=amazonwebservices&logoColor=white)](AWS_DEPLOYMENT.md)
 [![scikit-learn](https://img.shields.io/badge/ML-Isolation%20Forest-F7931E?logo=scikitlearn&logoColor=white)](tools/)
 [![Groq](https://img.shields.io/badge/LLM-Groq-F55036)](https://groq.com/)
 [![AML](https://img.shields.io/badge/Domain-AML%20Investigation-ff6b52)](#aml-detection-strategy)
@@ -36,26 +37,57 @@ An agentic AML investigation workspace that converts a natural-language question
 | Governance | Dataset, model, policy, execution, workflow, and evidence provenance |
 | Output | Ranked entities, risk band, score, explanation, recommendation, evidence, charts, and trace |
 
-## Live deployment
+## Live AWS deployment
 
-| Deployment boundary | Platform | Production URL |
+| Component | AWS service | Live link |
 | --- | --- | --- |
-| **Frontend only** — React, TypeScript, Vite, static assets | **Vercel** | [https://sentinel-aml-gamma.vercel.app](https://sentinel-aml-gamma.vercel.app) |
-| **Backend only** — FastAPI, agent orchestration, AML/ML tools, DuckDB | **Hugging Face Spaces** | [https://mayank2142-sentinel-aml-api.hf.space](https://mayank2142-sentinel-aml-api.hf.space) |
-| Interactive API documentation | Hugging Face Spaces | [https://mayank2142-sentinel-aml-api.hf.space/docs](https://mayank2142-sentinel-aml-api.hf.space/docs) |
-| Backend health check | Hugging Face Spaces | [https://mayank2142-sentinel-aml-api.hf.space/health](https://mayank2142-sentinel-aml-api.hf.space/health) |
+| React/TypeScript frontend | Amazon S3 HTTPS endpoint | **[Open the secure application](https://sentinel-aml-demo-frontendbucket-aqfdpzq4srwb.s3.ap-south-1.amazonaws.com/index.html#/)** |
+| FastAPI backend | API Gateway + Lambda container | [API base URL](https://r4kba8rio5.execute-api.ap-south-1.amazonaws.com) |
+| Interactive API documentation | API Gateway + Lambda | [Swagger UI](https://r4kba8rio5.execute-api.ap-south-1.amazonaws.com/docs) |
+| API specification | API Gateway + Lambda | [OpenAPI JSON](https://r4kba8rio5.execute-api.ap-south-1.amazonaws.com/openapi.json) |
+| Service health | API Gateway + Lambda | [Health endpoint](https://r4kba8rio5.execute-api.ap-south-1.amazonaws.com/health) |
+| Dataset readiness | API Gateway + Lambda | [Readiness endpoint](https://r4kba8rio5.execute-api.ap-south-1.amazonaws.com/ready) |
+| Active datasets | API Gateway + Lambda | [Datasets endpoint](https://r4kba8rio5.execute-api.ap-south-1.amazonaws.com/datasets) |
 
-Vercel builds only the [`frontend/`](frontend/) directory. It does **not**
-package or execute the Python backend. The frontend proxies `/api/*` requests
-to the Hugging Face Space, keeping the browser on a single production origin.
-The free Space may sleep after inactivity; its governed seed database is
-restored automatically when the service restarts.
+The AWS deployment runs in `ap-south-1` and uses the **HI-Small Transactions**
+workspace as its active primary evidence source. The governed workspace contains
+5,078,345 HI-Small transactions. SAML-D remains a separate knowledge and model
+calibration workspace; it does not replace the active transaction evidence.
+
+![Sentinel AML AWS command center showing API connected and HI-Small active](docs/screenshots/aws-command-center.png)
+
+### AWS service integration
+
+| AWS service | Project use |
+| --- | --- |
+| Amazon S3 | Serves the React build over HTTPS and stores datasets, reports, SAR drafts, generated evidence, and the durable DuckDB workspace snapshot |
+| Amazon DynamoDB | Stores investigation metadata and workflow state and coordinates the serialized Lambda workspace lock |
+| AWS Lambda | Runs the FastAPI application in a container image and processes S3 dataset creation events |
+| Amazon API Gateway | Exposes the existing FastAPI routes to the browser with production CORS configuration |
+| Amazon CloudWatch | Captures Lambda application logs and structured API Gateway access logs |
+| Amazon SNS | Publishes notification attempts after the existing risk engine classifies an investigation as HIGH risk |
+| Amazon ECR | Stores the Lambda container image with pandas, NumPy, scikit-learn, DuckDB, and NetworkX |
+| AWS SAM / CloudFormation | Creates the buckets, table, topic, API, Lambda function, IAM role, event notification, and log groups |
+
+```mermaid
+flowchart TD
+    UI["React + TypeScript"] -->|HTTPS API calls| APIGW["Amazon API Gateway"]
+    APIGW --> LAMBDA["AWS Lambda container<br/>FastAPI + existing AML engine"]
+    S3["Amazon S3<br/>datasets, reports, SAR drafts, state"] -->|ObjectCreated| LAMBDA
+    LAMBDA --> S3
+    LAMBDA --> DDB["Amazon DynamoDB<br/>investigations + workflow"]
+    LAMBDA --> CW["Amazon CloudWatch<br/>application + access logs"]
+    LAMBDA -->|HIGH risk| SNS["Amazon SNS<br/>investigator notification"]
+```
+
+See [AWS_DEPLOYMENT.md](AWS_DEPLOYMENT.md) for the complete Windows PowerShell
+deployment, validation, troubleshooting, and cleanup instructions.
 
 ## Product experience
 
 ### 1. Query-aware command center
 
-![Sentinel AML command center with direct governed dataset upload](docs/screenshots/command-center.png)
+![Sentinel AML command center with direct governed dataset upload](docs/screenshots/aws-command-center.png)
 
 The command center supports broad exploration, typology searches, threshold aggregation, and single-customer review from the same interface. Analysts can also upload CSV/XLSX evidence directly into the governed ingestion workflow.
 
@@ -67,7 +99,7 @@ Risk-ranked alerts include ownership, SLA state, notes, disposition, typology, e
 
 ### 3. Governed dataset workspaces
 
-![Sentinel AML dataset workspaces](docs/screenshots/dataset-workspaces.png)
+![Sentinel AML dataset workspaces with HI-Small active](docs/screenshots/aws-hi-small-dataset.png)
 
 Operational transactions, knowledge/calibration data, and uploaded evidence remain isolated. Each workspace exposes source metadata, schema, fingerprint, ingestion time, row count, label prevalence, and activation state.
 
@@ -378,8 +410,8 @@ Invoke-RestMethod `
 ### 1. Clone
 
 ```powershell
-git clone https://github.com/Mayank2142/AI-Powered-Suspicious-Activity-Detection.git
-Set-Location AI-Powered-Suspicious-Activity-Detection
+git clone https://github.com/Mayank2142/Anti-Money-Laundering-Detection.git
+Set-Location Anti-Money-Laundering-Detection
 ```
 
 For an existing clone:
@@ -617,7 +649,7 @@ Before institutional deployment:
 - add enterprise identity, authorization, secrets management, and network controls;
 - encrypt evidence in transit and at rest;
 - enforce jurisdictional retention and privacy requirements;
-- move local workflow persistence to approved durable infrastructure;
+- validate the deployed DynamoDB workflow configuration against the institution's retention and recovery requirements;
 - establish model approval, drift review, change control, and rollback;
 - add distributed telemetry, service-level monitoring, rate limiting, and load testing;
 - document case-management and SAR/STR handoff integrations;
@@ -626,10 +658,11 @@ Before institutional deployment:
 
 ## Team
 
-| Contributor | Focus |
+| Team member | Contribution |
 | --- | --- |
-| **Mayank Gupta** | Product experience, frontend architecture, UI/UX, visualization, integration |
-| **Devesh Raj** | Backend services, agent orchestration, APIs, AML logic, ML and data systems |
+| **Mayank Gupta** | Mainly worked on the frontend. Built the React/TypeScript dashboard, transaction pages, risk charts, and investigation screens; connected the frontend to the backend; and kept the interface simple and easy to use. |
+| **Devesh Singhal** | Mainly worked on AWS and cloud integration. Implemented S3, DynamoDB, Lambda, API Gateway, CloudWatch, and SNS for data storage, serverless processing, API management, monitoring, and high-risk alerts; also supported cloud setup and deployment. |
+| **Devesh Raj** | Mainly worked on the backend and AI/ML. Built the FastAPI backend and transaction analysis using AML rules, statistical detection, Isolation Forest, and NetworkX graph analysis; also implemented risk scoring and evidence-based explanations for suspicious activity. |
 
 ## Responsible-use statement
 
