@@ -1,3 +1,4 @@
+# Centralized and validated runtime configuration for Sentinel AML
 """Validated runtime configuration for Sentinel AML.
 
 Application modules import the compatibility constants at the bottom of this
