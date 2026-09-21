@@ -5,8 +5,9 @@
 - **Mayank Gupta (team leader)** — FastAPI backend, transaction analysis,
   anomaly detection, AML rules, statistical detection, graph analysis, risk
   scoring, and explanations for suspicious transactions.
-- **Devesh Singhal** — AWS integration and deployment using S3, DynamoDB,
-  Lambda, API Gateway, CloudWatch, SNS, IAM, SAM, and CloudFormation.
+- **Devesh Singhal** — AWS and cloud integration using S3, DynamoDB, Lambda,
+  API Gateway, CloudWatch, and SNS for storage, processing, API management,
+  monitoring, alerts, cloud setup, and deployment.
 - **Devesh Raj** — React/TypeScript dashboard, transaction pages, risk charts,
   investigation screens, frontend/backend integration, and UI/UX.
 
