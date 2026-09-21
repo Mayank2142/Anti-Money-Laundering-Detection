@@ -48,7 +48,7 @@ async function authRequest<T>(
   try {
     const headers = new Headers(init.headers)
     if (!headers.has('Accept')) headers.set('Accept', 'application/json')
-    if (!headers.has('Content-Type')) {
+    if (init.body !== undefined && init.body !== null && !headers.has('Content-Type')) {
       headers.set('Content-Type', 'application/json')
     }
     const response = await fetch(`${API_BASE}${path}`, {

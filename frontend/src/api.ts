@@ -88,11 +88,13 @@ async function request<T>(path: string, init: ApiRequestInit = {}): Promise<T> {
 
     try {
       const headers = new Headers(init?.headers)
-      if (!(init?.body instanceof FormData) && !headers.has('Content-Type')) {
+      const hasBody = init.body !== undefined && init.body !== null
+      if (hasBody && !(init.body instanceof FormData) && !headers.has('Content-Type')) {
         headers.set('Content-Type', 'application/json')
       }
       headers.set('Accept', 'application/json')
-      headers.set('X-Client-Request-Id', requestId)
+      // Keep idempotent reads CORS-simple. Write requests retain correlation IDs.
+      if (method !== 'GET') headers.set('X-Client-Request-Id', requestId)
       const response = await fetch(`${API_BASE}${path}`, {
         ...init,
         headers,
