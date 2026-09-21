@@ -11,6 +11,7 @@ dataset/
 .env
 .env.*
 !.env.example
+!frontend/.env.aws.example
 
 # Python
 __pycache__/
@@ -24,6 +25,7 @@ htmlcov/
 dist/
 build/
 .venv/
+.venv-iac/
 venv/
 env/
 
@@ -47,4 +49,9 @@ Thumbs.db
 .legacy_frontend_worktree/
 output/
 reports/
+investigation.pdf
 exports/
+.aws-sam/
+.playwright-cli/
+samconfig.toml
+.codex-*.log
