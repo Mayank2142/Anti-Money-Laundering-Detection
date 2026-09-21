@@ -2,6 +2,8 @@ import { type DragEvent, type FormEvent, useEffect, useState } from 'react'
 import { inspectDataset, uploadDataset } from '../api'
 import type { DatasetInfo, DatasetInspection, DatasetUploadResult } from '../types'
 
+const MAX_UPLOAD_MB = Number(import.meta.env.VITE_MAX_UPLOAD_MB || 25)
+
 interface Props {
   onClose: () => void
   onUploaded: (result: DatasetUploadResult) => void
@@ -26,13 +28,14 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
   async function chooseFile(next: File | null) {
     if (!next) return
     const supported = /\.(csv|xlsx)$/i.test(next.name)
-    if (!supported || next.size > 25 * 1024 * 1024) {
+    const maxUploadMb = MAX_UPLOAD_MB
+    if (!supported || next.size > maxUploadMb * 1024 * 1024) {
       setFile(null)
       setInspection(null)
       setError(
         !supported
           ? 'Choose a CSV or Excel (.xlsx) file.'
-          : 'Files larger than 25 MB require the controlled batch-ingestion process.',
+          : `Files larger than ${maxUploadMb} MB require the controlled batch-ingestion process.`,
       )
       return
     }
@@ -80,7 +83,7 @@ export default function UploadModal({ onClose, onUploaded }: Props) {
           <label className="upload-dropzone" onDragOver={(event) => event.preventDefault()} onDrop={handleDrop}>
             <input aria-label="Dataset file" type="file" accept=".csv,.xlsx" onChange={(event) => void chooseFile(event.target.files?.[0] ?? null)} />
             <strong>{file ? file.name : 'Drop CSV or Excel here'}</strong>
-            <span>{file ? `${(file.size / 1024).toFixed(1)} KB selected` : 'CSV or XLSX, up to 25 MB · inspected before ingest'}</span>
+            <span>{file ? `${(file.size / 1024).toFixed(1)} KB selected` : `CSV or XLSX, up to ${MAX_UPLOAD_MB} MB · inspected before ingest`}</span>
           </label>
           <div className="upload-fields">
             <label><span>Dataset name</span><input value={name} maxLength={120} onChange={(event) => setName(event.target.value)} /></label>
