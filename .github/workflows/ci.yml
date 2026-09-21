@@ -1,3 +1,4 @@
+#Add CI workflow for backend and frontend tests
 name: Sentinel AML CI
 
 on:
