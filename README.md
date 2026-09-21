@@ -660,7 +660,7 @@ Before institutional deployment:
 
 | Team member | Contribution |
 | --- | --- |
-| **Mayank Gupta** | Mainly worked on the frontend. Built the React/TypeScript dashboard, transaction pages, risk charts, and investigation screens; connected the frontend to the backend; and kept the interface simple and easy to use. |
+| **Mayank Gupta — Team leader** | Mainly worked on the backend and AI/ML. Built the FastAPI backend and worked on transaction analysis, anomaly detection, AML rules, statistics, graph analysis, risk scoring, and simple explanations for suspicious transactions. |
 | **Devesh Singhal** | Mainly worked on AWS and cloud integration. Implemented S3, DynamoDB, Lambda, API Gateway, CloudWatch, and SNS for data storage, serverless processing, API management, monitoring, and high-risk alerts; also supported cloud setup and deployment. |
 | **Devesh Raj** | Mainly worked on the backend and AI/ML. Built the FastAPI backend and transaction analysis using AML rules, statistical detection, Isolation Forest, and NetworkX graph analysis; also implemented risk scoring and evidence-based explanations for suspicious activity. |
 
