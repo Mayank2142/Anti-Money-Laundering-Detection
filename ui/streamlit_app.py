@@ -1,3 +1,4 @@
+# Optional Streamlit compatibility launcher for Sentinel AML
 """Optional Streamlit compatibility launcher for Sentinel AML."""
 from __future__ import annotations
 
